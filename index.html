@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Calculateur Médicaments complet corrigé</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    label { display: block; margin-top: 10px; }
+    input[type=number], input[type=text] { padding: 5px; width: 220px; }
+    button { margin-top: 10px; padding: 8px 12px; cursor: pointer; }
+    table { border-collapse: collapse; margin-top: 20px; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; vertical-align: top; }
+    th { background-color: #f0f0f0; }
+    .adulte { background-color: #d0e7ff; }
+    .pediatrie { background-color: #d0ffd8; }
+    .erreur { color: red; font-weight: bold; }
+    .avertissement { color: orange; }
+  </style>
+</head>
+<body>
+
+  <h1>Calculateur Médicaments complet corrigé</h1>
+
+  <label for="ageAnnee">Âge (années) :</label>
+  <input type="number" id="ageAnnee" min="0" step="1" placeholder="ex: 2" />
+
+  <label for="ageMois">Âge (mois, si < 1 an) :</label>
+  <input type="number" id="ageMois" min="0" max="11" step="1" placeholder="ex: 6" />
+
+  <label for="poids">Poids (en kg) :</label>
+  <input type="number" id="poids" min="0" step="0.1" />
+
+  <label for="eva">Score EVA (0 à 10) :</label>
+  <input type="number" id="eva" min="0" max="10" step="1" placeholder="ex: 6" />
+
+  <label for="recherche">Rechercher un médicament (ou tapez % pour tous) :</label>
+  <input type="text" id="recherche" placeholder="Tapez un nom ou %" />
+
+  <button onclick="calculerDosages()">Valider</button>
+
+  <div id="resultats"></div>
+
+  <script>
+    const medicaments = [
+      { nom: "Acétylsalicylate de Lysine Adulte", dosageAdulte: "250 Mg IVD", dosageEnfant: null, remarques: "Accord SAMU", conditionEnfant: () => false, requiertEVA: false, calculDose: null },
+      { nom: "Adrénaline (Anaphylaxie) ≥40 Kg", dosageAdulte: "0.5 Mg IM", dosageEnfant: null, remarques: "A renouveler à + 5 mn puis toute les 10 mn", conditionEnfant: (age, poids) => poids >= 40, requiertEVA: false, calculDose: null },
+      { nom: "Adrénaline (Anaphylaxie) < 40 Kg", dosageAdulte: null, dosageEnfant: "0.01 Mg/Kg IM", remarques: "A renouveler à + 5 mn puis toute les 10 mn", conditionEnfant: (age, poids) => poids < 40, requiertEVA: false,
+        calculDose: (poids) => `${(0.01 * poids).toFixed(2)} Mg IM` },
+      { nom: "Adrénaline (DRA Inspiratoire) < à 16 ans et < à 40 Kg", dosageAdulte: null, dosageEnfant: "1 Mg + 5 Ml Nacl 0.9% + 6 L O2 aérosol", remarques: "Accord SAMU - Inhalation 15 Mn- 1 seule fois", conditionEnfant: (age, poids) => age < 16 && poids < 40, requiertEVA: false, calculDose: null },
+      { nom: "Adrénaline ACR ≥40 Kg", dosageAdulte: "1 Mg IVD à renouveler toutes les 3 à 5 mn", dosageEnfant: null, remarques: "", conditionEnfant: (age, poids) => poids >= 40, requiertEVA: false, calculDose: null },
+      { nom: "Adrénaline ACR < 40 Kg", dosageAdulte: null, dosageEnfant: "0.01 Mg/Kg à renouveler toutes les 3 à 5 mn", remarques: "", conditionEnfant: (age, poids) => poids < 40, requiertEVA: false,
+        calculDose: (poids) => `${(0.01 * poids).toFixed(2)} Mg à renouveler toutes les 3 à 5 mn` },
+      { nom: "Amiodarone ≥40 Kg", dosageAdulte: "300 Mg IVD dès 3 CEE puis 150 Mg au 5 é CEE", dosageEnfant: null, remarques: "Dilution G5% -(*) Ne pas dépasser 150 Mg", conditionEnfant: (age, poids) => poids >= 40, requiertEVA: false,
+        calculDose: () => "300 Mg IVD dès 3 CEE puis 150 Mg au 5 é CEE (max 150 Mg)" },
+      { nom: "Amiodarone <40 Kg", dosageAdulte: null, dosageEnfant: "5 Mg/Kg dès 3 CEE à renouveler au 5 é CEE (*)", remarques: "", conditionEnfant: (age, poids) => poids < 40, requiertEVA: false,
+        calculDose: (poids) => `${(5 * poids).toFixed(2)} Mg dès 3 CEE à renouveler au 5 é CEE` },
+      { nom: "Augmentin Adulte", dosageAdulte: "2 Gr IV Perf ou 1 Gr IVDL (10 Ml NaCl 0.9%)", dosageEnfant: null, remarques: "Perfusion de 30 Mn dans 100 Ml NaCl 0.9 %", conditionEnfant: () => false, requiertEVA: false, calculDose: null },
+      { nom: "Bétaméthasone 0.05 % < à 16 ans et < à 40 Kg", dosageAdulte: null, dosageEnfant: "20 Gouttes/Kg per os (<25kg)", remarques: "40 gouttes = 1 ml", conditionEnfant: (age, poids) => age < 16 && poids < 40, requiertEVA: false,
+        calculDose: (poids) => `${(20 * poids).toFixed(0)} gouttes per os` },
+      { nom: "Clonazepam ≥50 Kg", dosageAdulte: "1 Mg IVDL + 9 Ml NaCl – AR 1 fois si SAMU OK", dosageEnfant: null, remarques: "Si VVP impossible voie IM (sans dilution)", conditionEnfant: (age, poids) => poids >= 50, requiertEVA: false, calculDose: null },
+      { nom: "Clonazepam <50Kg", dosageAdulte: null, dosageEnfant: "0.05 Mg/Kg IV (>1an) (Max 1 Mg)", remarques: "Si VVP impossible voie IM (sans dilution)", conditionEnfant: (age, poids) => poids < 50, requiertEVA: false,
+        calculDose: (poids) => {
+          const dose = 0.05 * poids;
+          return `${dose > 1 ? 1 : dose.toFixed(2)} Mg IV (>1 an) (Max 1 Mg)`;
+        }
+      },
+      { nom: "Dexchlorphéniramine Adulte - Enfant", dosageAdulte: "5 Mg IVD", dosageEnfant: "5 Mg IVD (> 30 Mois)", remarques: "Contre-indication: Grossesse, +/- allaitement", conditionEnfant: (age) => age >= 2.5, requiertEVA: false, calculDose: null },
+      { nom: "Diazepam < 1 an", dosageAdulte: null, dosageEnfant: "0.5 Mg/Kg en IR (<1 an) (Max 10 Mg)", remarques: "", conditionEnfant: (age) => age < 1, requiertEVA: false,
+        calculDose: (poids) => {
+          const dose = 0.5 * poids;
+          return dose > 10 ? "10 Mg en IR (<1 an) (Max 10 Mg)" : `${dose.toFixed(2)} Mg en IR (<1 an) (Max 10 Mg)`;
+        }
+      },
+      { nom: "Exacyl ≥16 ans ou >40 Kg", dosageAdulte: "1 Gr IVDL", dosageEnfant: null, remarques: "", conditionEnfant: (age, poids) => age >= 16 || poids > 40, requiertEVA: false, calculDose: null },
+      { nom: "Exacyl <16 ans et <40 Kg", dosageAdulte: null, dosageEnfant: "10 Mg/Kg IVDL", remarques: "", conditionEnfant: (age, poids) => age < 16 && poids < 40, requiertEVA: false,
+        calculDose: (poids) => `${(10 * poids).toFixed(2)} Mg IVDL` },
+      { nom: "Furosemide Adulte", dosageAdulte: "1 Mg/KG IVD (dose maxi 80Mg)", dosageEnfant: null, remarques: "Accord SAMU", conditionEnfant: () => false, requiertEVA: false,
+        calculDose: (poids) => {
+          const dose = poids;
+          return `1 Mg/Kg IVD (dose maxi 80 Mg) = ${dose > 80 ? 80 : dose.toFixed(2)} Mg`;
+        }
+      },
+      { nom: "Glucose 30 % Adulte - Enfant", dosageAdulte: "6 Gr IVDL (3 minutes) - AR à + 5 mn si besoin", dosageEnfant: "6 Gr IVDL (3 minutes) - AR à + 5 mn si besoin", remarques: "", conditionEnfant: () => true, requiertEVA: false, calculDose: null },
+      { nom: "Héparine Non Fractionnée Adulte", dosageAdulte: "60 UI/Kg en bolus IV (dose maxi 4000 UI)", dosageEnfant: null, remarques: "Accord SAMU – (flacon de 5000 UI/ Ml)", conditionEnfant: () => false, requiertEVA: false,
+        calculDose: (poids) => {
+          const dose = 60 * poids;
+          return `60 UI/Kg en bolus IV (dose maxi 4000 UI) = ${dose > 4000 ? 4000 : dose.toFixed(0)} UI`;
+        }
+      },
+      { nom: "Hydroxocobalamine ≥50 Kg", dosageAdulte: "5 gr IV perf de 15 minutes", dosageEnfant: null, remarques: "Dilution dans 200 Ml de NaCl 0.9%", conditionEnfant: (age, poids) => poids >= 50, requiertEVA: false, calculDose: null },
+      { nom: "Hydroxocobalamine <50 Kg", dosageAdulte: null, dosageEnfant: "70 Mg/Kg IV perf de 15 minutes", remarques: "", conditionEnfant: (age, poids) => poids < 50, requiertEVA: false,
+        calculDose: (poids) => `${(70 * poids).toFixed(2)} Mg IV perf de 15 minutes` },
+      { nom: "Ipratropium Adulte", dosageAdulte: "0.5 Mg/2 Ml + 9 L O2", dosageEnfant: null, remarques: "Inhalation aérosol 15 mn, renouvelable 1 fois", conditionEnfant: () => false, requiertEVA: false, calculDose: null },
+      { nom: "Ipratropium < à 16 ans et < à 40 Kg", dosageAdulte: null, dosageEnfant: "0.25 Mg (<16 Kg) - 0.5Mg (≥16 Kg) / + 6 L O2", remarques: "", conditionEnfant: (age, poids) => age < 16 && poids < 40, requiertEVA: false,
+        calculDose: (age, poids) => poids < 16 ? "0.25 Mg + 6 L O2" : "0.5 Mg + 6 L O2"
+      },
+      { nom: "Loxapine > 15 ans", dosageAdulte: "150 Mg IM", dosageEnfant: null, remarques: "Diminuer à 100 Mg si + de 75 ans ou Alcool", conditionEnfant: (age) => age > 15, requiertEVA: false, calculDose: null },
+      {
+        nom: "Méthylprédnisolone Adulte et enfant ≥ 30 mois",
+        dosageAdulte: null,
+        dosageEnfant: null,
+        remarques: "Interdit si allergie avérée au Protéines de lait",
+        conditionEnfant: (age, poids) => age >= 2.5,
+        requiertEVA: false,
+        calculDose: (age, poids) => {
+          if (!poids || isNaN(poids)) return null;
+          return `${(1 * poids).toFixed(2)} Mg en IVD`;
+        }
+      },
+      {
+        nom: "Méthylprédnisolone enfant < 30 mois",
+        dosageAdulte: null,
+        dosageEnfant: null,
+        remarques: "Non recommandé pour enfant < 30 mois",
+        conditionEnfant: (age, poids) => age < 2.5,
+        requiertEVA: false,
+        calculDose: () => "Non recommandé"
+      },
+      { nom: "Morphine IV (EVA ≥ 6) ≥50 Kg", dosageAdulte: "3 Mg IV et 2 Mg/5 mn (dose Maxi 15 Mg)", dosageEnfant: null, remarques: "Si VVP impossible voie S/C", conditionEnfant: (age, poids) => poids >= 50, requiertEVA: true,
+        calculDose: (poids, eva) => {
+          if (eva < 6) return { texte: "Morphine non recommandée pour EVA < 6", erreur: true };
+          return { texte: "3 Mg IV et 2 Mg/5 mn (dose Maxi 15 Mg)", erreur: false };
+        }
+      },
+      { nom: "Morphine IV (EVA ≥ 6) <50 Kg", dosageAdulte: null, dosageEnfant: "0.05 Mg/Kg IV puis ½ dose/5mn (Max 10 Mg)", remarques: "Si VVP impossible voie S/C", conditionEnfant: (age, poids) => poids < 50, requiertEVA: true,
+        calculDose: (poids, eva) => {
+          if (eva < 6) return { texte: "Morphine non recommandée pour EVA < 6", erreur: true };
+          let dose = 0.05 * poids;
+          if (dose > 10) dose = 10;
+          return { texte: `${dose.toFixed(2)} Mg IV puis ½ dose/5mn (Max 10 Mg)`, erreur: false };
+        }
+      },
+      { nom: "Paracétamol ≥50 Kg", dosageAdulte: null, dosageEnfant: null, remarques: "", conditionEnfant: (age, poids) => poids >= 50, requiertEVA: true,
+        calculDose: (poids, eva) => {
+          if (eva < 3) return { texte: "Dose non recommandée pour EVA < 3", erreur: true };
+          if (eva >= 3) return { texte: "1000 mg PO", erreur: false };
+          return null;
+        }
+      },
+      { nom: "Paracétamol <50 Kg", dosageAdulte: null, dosageEnfant: "EVA 3 à 5 per os* ou Perf 15 Mg/Kg si EVA>5 *(8-14 kg/150 Mg) (15-26 Kg/300 Mg) (27-49 Kg/500Mg)", remarques: "", conditionEnfant: (age, poids) => poids < 50, requiertEVA: true,
+        calculDose: (poids, eva) => {
+          if (eva < 3) return { texte: "Dose non recommandée pour EVA < 3", erreur: true };
+          if (eva >= 3 && eva <= 5) {
+            if (poids >= 8 && poids <= 14) return { texte: "150 Mg per os", erreur: false };
+            if (poids >= 15 && poids <= 26) return { texte: "300 Mg per os", erreur: false };
+            if (poids >= 27 && poids <= 49) return { texte: "500 Mg per os", erreur: false };
+            return { texte: "Dose per os adaptée", erreur: false };
+          }
+          if (eva > 5) {
+            const dose = 15 * poids;
+            return { texte: `Perf ${dose.toFixed(2)} Mg`, erreur: false };
+          }
+          return null;
+        }
+      },
+      { nom: "Phloroglucinol ≥50 Kg", dosageAdulte: null, dosageEnfant: null, remarques: "", conditionEnfant: (age, poids) => poids >= 50, requiertEVA: true,
+        calculDose: (poids, eva) => {
+          if (eva < 3) return { texte: "Dose non recommandée pour EVA < 3", erreur: true };
+          if (eva >= 3 && eva <= 5) return { texte: "160 Mg per os", erreur: false };
+          if (eva >= 6) return { texte: "160 Mg IVDL", erreur: false };
+          return null;
+        }
+      },
+      { nom: "Phloroglucinol <50 Kg (> à 2 ans)", dosageAdulte: null, dosageEnfant: null, remarques: "", conditionEnfant: (age, poids) => poids < 50 && age > 2, requiertEVA: true,
+        calculDose: (poids, eva) => {
+          if (eva < 3) return { texte: "Dose non recommandée pour EVA < 3", erreur: true };
+          if (eva >= 3 && eva <= 5) return { texte: "80 Mg per os", erreur: false };
+          if (eva >= 6) return { texte: "80 Mg IVDL", erreur: false };
+          return null;
+        }
+      },
+      { nom: "Prednisolone orodispers < à 16 ans et < à 40 Kg", dosageAdulte: null, dosageEnfant: "2 Mg/Kg per os (> 25 Kg)", remarques: "", conditionEnfant: (age, poids) => age < 16 && poids < 40, requiertEVA: false, calculDose: null },
+      { nom: "Salbutamol Adulte", dosageAdulte: "5 Mg/2.5 Ml + 9 L O2", dosageEnfant: null, remarques: "Inhalation aérosol 15 mn, renouvelable 1 fois", conditionEnfant: (age, poids) => poids >= 40, requiertEVA: false, calculDose: null },
+      { nom: "Salbutamol < à 16 ans et < à 40 Kg", dosageAdulte: null, dosageEnfant: "2.5 Mg (<16Kg) – 5 Mg (≥16 Kg) / + 6 L O2", remarques: "Inhalation aérosol 15 mn, renouvelable 1 fois", conditionEnfant: (age, poids) => age < 16 && poids < 40, requiertEVA: false,
+        calculDose: (age, poids) => poids < 16 ? "2.5 Mg + 6 L O2" : "5 Mg + 6 L O2"
+      },
+      { nom: "Ticagrelor Adulte", dosageAdulte: "180 Mg per os (2 Cp de 90 Mg)", dosageEnfant: null, remarques: "Accord SAMU", conditionEnfant: (age, poids) => poids >= 40, requiertEVA: false, calculDose: null }
+    ];
+
+    function normaliserTexte(str) {
+      return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "");
+    }
+
+    function calculerDosages() {
+      const ageAnneeInput = document.getElementById("ageAnnee").value;
+      const ageMoisInput = document.getElementById("ageMois").value;
+      const poidsInput = document.getElementById("poids").value;
+      const evaInput = document.getElementById("eva").value;
+      const rechercheInput = document.getElementById("recherche").value.trim();
+
+      const resultDiv = document.getElementById("resultats");
+      resultDiv.innerHTML = "";
+
+      let ageEnAnnees = null;
+      if (ageAnneeInput !== "" || ageMoisInput !== "") {
+        const annees = ageAnneeInput === "" ? 0 : parseInt(ageAnneeInput, 10);
+        const mois = ageMoisInput === "" ? 0 : parseInt(ageMoisInput, 10);
+        if (mois < 0 || mois > 11) {
+          resultDiv.innerHTML = "<p class='erreur'>Le nombre de mois doit être entre 0 et 11.</p>";
+          return;
+        }
+        ageEnAnnees = annees + (mois / 12);
+      }
+
+      const poids = parseFloat(poidsInput);
+      const poidsValide = !isNaN(poids) && poids > 0;
+
+      const eva = parseInt(evaInput, 10);
+      const evaValide = !isNaN(eva) && eva >= 0 && eva <= 10;
+
+      const rechercheNorm = normaliserTexte(rechercheInput);
+
+      let medicamentsFiltres = medicaments.filter(med => {
+        if (rechercheInput === "" || rechercheInput === "%") return true;
+        const nomNorm = normaliserTexte(med.nom);
+        return nomNorm.includes(rechercheNorm);
+      });
+
+      if (medicamentsFiltres.length === 0) {
+        resultDiv.innerHTML = "<p class='erreur'>Aucun médicament trouvé pour cette recherche.</p>";
+        return;
+      }
+
+      medicamentsFiltres = medicamentsFiltres.filter(med => {
+        if (typeof med.conditionEnfant === "function") {
+          if (ageEnAnnees === null || isNaN(poids)) return true;
+          return med.conditionEnfant(ageEnAnnees, poids);
+        }
+        return true;
+      });
+
+      if (medicamentsFiltres.length === 0) {
+        resultDiv.innerHTML = "<p class='erreur'>Aucun médicament adapté à l'âge et poids renseignés.</p>";
+        return;
+      }
+
+      let html = "<table><thead><tr><th>Médicament</th><th>Dosage</th><th>Remarques</th></tr></thead><tbody>";
+
+      medicamentsFiltres.forEach(med => {
+        let dosage = "";
+        let classe = poidsValide && poids >= 50 ? "adulte" : "pediatrie";
+
+        if (med.calculDose) {
+          if (!poidsValide && med.calculDose.length >= 1) {
+            dosage = "<span class='avertissement'>Poids requis pour calcul</span>";
+          } else if (med.requiertEVA && !evaValide) {
+            dosage = "<span class='avertissement'>EVA requis pour ce médicament</span>";
+          } else {
+            let res;
+            if (med.calculDose.length === 3) {
+              res = med.calculDose(ageEnAnnees, poids, eva);
+            } else if (med.calculDose.length === 2) {
+              res = med.calculDose(poids, eva);
+            } else if (med.calculDose.length === 1) {
+              res = med.calculDose(poids);
+            } else {
+              res = med.calculDose();
+            }
+            if (!res) return;
+            if (typeof res === "object") {
+              dosage = res.texte;
+              if (res.erreur) classe = "erreur";
+            } else {
+              dosage = res;
+            }
+          }
+        } else {
+          if (med.dosageAdulte && (!poidsValide || poids >= 50)) {
+            dosage = med.dosageAdulte;
+            classe = "adulte";
+          } else if (med.dosageEnfant && poidsValide && poids < 50) {
+            dosage = med.dosageEnfant;
+            classe = "pediatrie";
+          } else {
+            return;
+          }
+        }
+
+        html += `<tr class="${classe}">
+          <td>${med.nom}</td>
+          <td>${dosage}</td>
+          <td>${med.remarques || ""}</td>
+        </tr>`;
+      });
+
+      html += "</tbody></table>";
+      resultDiv.innerHTML = html;
+    }
+  </script>
+
+</body>
+</html>
